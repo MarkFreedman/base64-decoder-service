@@ -1,11 +1,11 @@
 const express = require('express');
 const fs = require('fs');
-const path = require('path');
-const app = express();
 const { exec } = require('child_process');
+const app = express();
 
 app.use(express.json({ limit: '100mb' }));
 
+// Upload and decode base64 video
 app.post('/decode', (req, res) => {
   const { data, filename } = req.body;
   if (!data || !filename) return res.status(400).send('Missing base64 data or filename');
@@ -17,23 +17,38 @@ app.post('/decode', (req, res) => {
   res.send({ success: true, inputPath, size: buffer.length });
 });
 
+// Download saved video
 app.get('/video', (req, res) => {
-  const filePath = '/tmp/input.mov';
-  if (fs.existsSync(filePath)) {
-    res.download(filePath); // prompts file download in browser
-  } else {
-    res.status(404).send('File not found');
-  }
-});
-
-app.get('/audio', (req, res) => {
   const { filename } = req.query;
   if (!filename) return res.status(400).send('Missing filename query param');
 
-  const inputPath = `/tmp/${filename}`;
-  const outputPath = '/tmp/output.mp3';
+  const filePath = `/tmp/${filename}`;
+  if (fs.existsSync(filePath)) {
+    res.download(filePath);
+  } else {
+    res.status(404).send('Video file not found');
+  }
+});
 
-  exec(`ffmpeg -i ${inputPath} -vn -acodec libmp3lame ${outputPath}`, (err) => {
+// Download extracted audio
+app.get('/audio', (req, res) => {
+  const { filename, format = 'mp3' } = req.query;
+  if (!filename) return res.status(400).send('Missing filename query param');
+
+  const inputPath = `/tmp/${filename}`;
+  const outputPath = `/tmp/output.${format}`;
+
+  let ffmpegCmd = '';
+
+  if (format === 'mp3') {
+    ffmpegCmd = `ffmpeg -i ${inputPath} -vn -acodec libmp3lame ${outputPath}`;
+  } else if (format === 'wav') {
+    ffmpegCmd = `ffmpeg -i ${inputPath} -vn ${outputPath}`;
+  } else {
+    return res.status(400).send('Unsupported audio format');
+  }
+
+  exec(ffmpegCmd, (err) => {
     if (err) {
       console.error('FFmpeg error:', err);
       return res.status(500).send('Error extracting audio');
@@ -42,4 +57,4 @@ app.get('/audio', (req, res) => {
   });
 });
 
-app.listen(3000, () => console.log('Base64 decoder running on port 3000'));
+app.listen(3000, () => console.log('Decoder service running on port 3000'));
