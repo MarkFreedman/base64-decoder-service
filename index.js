@@ -79,11 +79,16 @@ app.get('/audio', (req, res) => {
 
 // Download any file by full path
 app.get('/file', (req, res) => {
-  const { path } = req.query;
-  if (!path || !fs.existsSync(path)) {
+  const { path: filePath } = req.query;
+  if (!filePath || !fs.existsSync(filePath)) {
     return res.status(404).send('File not found');
   }
-  res.download(path);
+
+  res.setHeader('Content-Type', 'audio/mpeg');
+  res.setHeader('Content-Disposition', `attachment; filename="${path.basename(filePath)}"`);
+
+  const fileStream = fs.createReadStream(filePath);
+  fileStream.pipe(res);
 });
 
 // Start the server
