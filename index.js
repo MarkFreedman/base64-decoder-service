@@ -96,6 +96,7 @@ app.get('/file', (req, res) => {
   res.setHeader('Content-Type', 'application/octet-stream');
   res.setHeader('Content-Disposition', `attachment; filename="${path.basename(filePath)}"`);
   res.setHeader('Content-Length', stat.size);
+  res.setHeader('Accept-Ranges', 'bytes');
 
   const fileStream = fs.createReadStream(filePath);
   fileStream.pipe(res);
