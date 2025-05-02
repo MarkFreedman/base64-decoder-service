@@ -1,13 +1,22 @@
-// Updated and cleaned up index.js
-
+const bodyParser = require('body-parser');
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const { exec } = require('child_process');
+const {
+  RekognitionClient,
+  StartLabelDetectionCommand,
+  GetLabelDetectionCommand,
+} = require('@aws-sdk/client-rekognition');
 
 const app = express();
 
 app.use(express.json({ limit: '100mb' }));
+app.use(bodyParser.json());
+
+const rekognition = new RekognitionClient({
+  region: process.env.AWS_REGION || 'us-east-1',
+});
 
 // Upload and decode base64 video
 app.post('/decode', (req, res) => {
@@ -100,6 +109,52 @@ app.get('/file', (req, res) => {
 
   const fileStream = fs.createReadStream(filePath);
   fileStream.pipe(res);
+});
+
+// Start a label-detection Rekognition job
+app.post('/rekognition/start', async (req, res) => {
+  const { bucket, key } = req.body;
+  if (!bucket || !key) {
+    return res.status(400).json({ error: 'Missing bucket or key in request body' });
+  }
+  try {
+    const command = new StartLabelDetectionCommand({
+      Video: { S3Object: { Bucket: bucket, Name: key } },
+      ClientRequestToken: `${Date.now()}`,       // simple idempotency token
+      JobTag: `n8n-${key}`,                      // optional tag for console lookup
+    });
+    const { JobId } = await rekognition.send(command);
+    res.json({ jobId: JobId });
+  } catch (err) {
+    console.error('StartLabelDetection error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get the results of a Rekognition job
+app.get('/rekognition/result/:jobId', async (req, res) => {
+  const { jobId } = req.params;
+  try {
+    const command = new GetLabelDetectionCommand({
+      JobId: jobId,
+      MaxResults: 1000,
+      SortBy: 'TIMESTAMP',
+    });
+    const data = await rekognition.send(command);
+    // flatten the Labels array for easy consumption
+    const labels = (data.Labels || []).map(item => ({
+      Timestamp: item.Timestamp,
+      Name: item.Label.Name,
+      Confidence: item.Label.Confidence,
+    }));
+    res.json({
+      status: data.JobStatus,  // IN_PROGRESS, SUCCEEDED, or FAILED
+      labels,
+    });
+  } catch (err) {
+    console.error('GetLabelDetection error:', err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // Start the server
